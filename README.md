@@ -13,6 +13,10 @@ Mehrbenutzerfähiger E-Mail-Client mit Flask, wahlweise MySQL 8.4 oder SQLite un
 - Suche im gewählten Ordner, Markierungen, Gelesen-Status, Verschieben und Pagination.
 - CSRF-Schutz, sichere Session-Cookies als Standard, serverseitige Berechtigungsprüfung auch für HTML-Ansichten und Downloads.
 
+## Windows
+
+Fuer Windows stehen eine [Installationsanleitung und PowerShell-Skripte](windows/README.md) bereit. Sie richten standardmaessig SQLite ein und starten die Anwendung mit Waitress.
+
 ## Lokal starten
 
 Python 3.12+ wird benötigt. Als Datenbank stehen MySQL 8.4 oder das in Python integrierte SQLite zur Auswahl. Im vorhandenen Checkout arbeiten; kein zusätzlicher Worktree erforderlich.
