@@ -64,3 +64,19 @@ Funktionsumfang und Grenzen der Mailanbindung stehen in der [Projekt-README](../
 ## Aktualisieren
 
 Vor einem Update Server und Abrufjobs stoppen und Datenbank sowie `.env` sichern. Dann `setup.ps1` erneut ausfuehren. Es aktualisiert die Abhaengigkeiten und ruft `upgrade-db` auf; bestehende Schluessel werden nicht ersetzt. Danach `start.ps1` starten. Details zu GUIDs und neuen Einstellungen stehen in der Projekt-README.
+
+## Fehler: No module named vobject
+
+Nach einem Projektupdate muessen auch die Abhaengigkeiten in der virtuellen Umgebung aktualisiert werden. Im Projektordner bei gestopptem Server `setup.ps1` erneut ausfuehren:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\setup.ps1
+```
+
+Alternativ nur die Python-Pakete aktualisieren:
+
+```powershell
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+Danach mit `windows\start.ps1` neu starten. Kein globales `pip` verwenden: Installation und Server muessen denselben Python-Interpreter nutzen. Das Setup prueft die Paketkonsistenz und den Import der CardDAV-Abhaengigkeiten. Lokale Kontakte funktionieren auch ohne installierte CardDAV-Pakete; CardDAV und vCard-Import/-Export zeigen in diesem Fall einen Installationshinweis.

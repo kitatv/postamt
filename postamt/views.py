@@ -9,7 +9,15 @@ from .permissions import allowed, folder_access, message_access, visible_folders
 from .mail import cipher, sync_account, send, sanitize, plain_text, display_html
 from .contacts import sender_state, sender_email, shared_contacts, reconcile_trust
 
+from .carddav import CardDAVDependencyError
+
 web = Blueprint('web', __name__)
+
+@web.errorhandler(CardDAVDependencyError)
+def missing_carddav_dependency(error):
+    db.session.rollback()
+    flash(str(error), 'error')
+    return redirect(url_for('web.contacts'))
 
 @web.route('/login', methods=['GET', 'POST'])
 def login():
@@ -286,7 +294,6 @@ def trust_sender(mid):
 @web.post('/messages/<int:mid>/contact')
 @login_required
 def contact_sender(mid):
-    from .carddav import create_remote
     message = message_access(mid)
     email = sender_email(message.sender)
     name = request.form.get('name','').strip()
@@ -301,7 +308,11 @@ def contact_sender(mid):
         db.session.add(contact)
         db.session.flush()
         if book:
-            try: create_remote(book, contact)
+            try:
+                from .carddav import create_remote
+                create_remote(book, contact)
+            except CardDAVDependencyError:
+                raise
             except Exception:
                 db.session.rollback()
                 flash('Kontakt konnte nicht im CardDAV-Adressbuch angelegt werden.', 'error')
@@ -334,6 +345,8 @@ def sync_contacts(bid):
     from .carddav import sync_book
     book = db.get_or_404(AddressBook,bid)
     try: flash(f'{sync_book(book)} Kontakte importiert.')
+    except CardDAVDependencyError:
+        raise
     except Exception:
         db.session.rollback()
         flash('CardDAV-Abruf fehlgeschlagen. URL, Zugangsdaten und Netzwerkzugriff prüfen.', 'error')
@@ -359,6 +372,8 @@ def import_contacts():
         reconcile_trust()
         db.session.commit()
         flash(f'{count} Kontakte importiert.')
+    except CardDAVDependencyError:
+        raise
     except Exception:
         db.session.rollback()
         flash('Ungültige oder zu große vCard-Datei (max. 2 MB).', 'error')

@@ -2,12 +2,26 @@
 import base64
 from urllib.parse import urlsplit, urljoin, quote
 from urllib.request import Request, build_opener, HTTPRedirectHandler
-import vobject
-from defusedxml import ElementTree
+from importlib import import_module
 from . import db
 from .models import Contact
 from .contacts import sender_email
 from .mail import cipher
+
+class CardDAVDependencyError(RuntimeError):
+    pass
+
+
+def dependency(name):
+    try:
+        return import_module(name)
+    except ModuleNotFoundError as error:
+        raise CardDAVDependencyError(
+            'CardDAV/vCard-Abhängigkeiten fehlen oder sind unvollständig. '
+            'Bitte im Projektordner windows/setup.ps1 erneut ausführen oder '
+            '.venv\\Scripts\\python.exe -m pip install -r requirements.txt verwenden.'
+        ) from error
+
 
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, *args, **kwargs):
@@ -37,6 +51,7 @@ def request(book, method, body, target=None, headers=None):
 
 
 def vcard(contact):
+    vobject = dependency('vobject')
     card = vobject.vCard()
     card.add('uid').value = contact.uid
     card.add('fn').value = contact.name
@@ -51,6 +66,7 @@ def create_remote(book, contact):
 
 
 def import_cards(data, owner_id, book_id=None):
+    vobject = dependency('vobject')
     count = 0
     for card in vobject.readComponents(data):
         name = str(card.fn.value).strip()[:150] if hasattr(card, 'fn') else ''
@@ -70,6 +86,8 @@ def import_cards(data, owner_id, book_id=None):
 
 
 def sync_book(book):
+    ElementTree = dependency('defusedxml.ElementTree')
+    dependency('vobject')
     body = b'''<?xml version="1.0" encoding="utf-8"?>
 <c:addressbook-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav"><d:prop><d:getetag/><c:address-data/></d:prop><c:filter/></c:addressbook-query>'''
     root = ElementTree.fromstring(request(book, 'REPORT', body, headers={'Depth':'1'}))

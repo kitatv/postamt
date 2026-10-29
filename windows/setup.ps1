@@ -17,6 +17,10 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Python 3.12 oder neuer erforderlich.' }
     & $Python -m pip install -r requirements.txt
     if ($LASTEXITCODE -ne 0) { throw 'Installation der Abhaengigkeiten fehlgeschlagen.' }
+    & $Python -m pip check
+    if ($LASTEXITCODE -ne 0) { throw 'Abhaengigkeiten sind inkonsistent. Installation pruefen.' }
+    & $Python -c 'import vobject, defusedxml.ElementTree, tinycss2'
+    if ($LASTEXITCODE -ne 0) { throw 'CardDAV/vCard-Abhaengigkeiten fehlen. Installation pruefen.' }
     & $Python windows\configure.py
     if ($LASTEXITCODE -ne 0) { throw 'Konfiguration fehlgeschlagen.' }
     & $Python -m flask --app postamt upgrade-db
