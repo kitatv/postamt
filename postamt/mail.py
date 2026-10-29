@@ -18,8 +18,46 @@ from .models import Message, Attachment
 def cipher():
     return Fernet(current_app.config['MAIL_ENCRYPTION_KEY'].encode())
 
+def strip_hidden_blocks(html):
+    """Remove non-visible HTML contents before Bleach strips their tags."""
+    class VisibleHTML(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=False)
+            self.output = []
+            self.hidden = []
+        def handle_starttag(self, tag, attrs):
+            if tag in ('style', 'script', 'head', 'title'):
+                self.hidden.append(tag)
+            elif not self.hidden:
+                self.output.append(self.get_starttag_text())
+        def handle_startendtag(self, tag, attrs):
+            if not self.hidden and tag not in ('style', 'script', 'head', 'title'):
+                self.output.append(self.get_starttag_text())
+        def handle_endtag(self, tag):
+            if self.hidden:
+                if tag in self.hidden:
+                    self.hidden = self.hidden[:self.hidden.index(tag)]
+            else:
+                self.output.append('</' + tag + '>')
+        def handle_data(self, data):
+            if not self.hidden: self.output.append(data)
+        def handle_entityref(self, name):
+            if not self.hidden: self.output.append('&' + name + ';')
+        def handle_charref(self, name):
+            if not self.hidden: self.output.append('&#' + name + ';')
+    parser = VisibleHTML()
+    parser.feed(html)
+    parser.close()
+    return ''.join(parser.output)
+
+
+def original_html(message):
+    original = BytesParser(policy=policy.default).parsebytes(message.raw)
+    parts = [p.get_content() for p in original.walk() if p.get_content_type() == 'text/html' and not p.get_filename()]
+    return '\n'.join(parts) or message.body_html
+
 def sanitize(html):
-    return bleach.clean(html, tags={'p','br','b','strong','i','em','u','ul','ol','li','blockquote','h1','h2','h3','a','table','tr','td','th','tbody','thead','span','div','pre','code'}, attributes={'a':['href','title']}, protocols={'https','http','mailto'}, strip=True)
+    return bleach.clean(strip_hidden_blocks(html), tags={'p','br','b','strong','i','em','u','ul','ol','li','blockquote','h1','h2','h3','a','table','tr','td','th','tbody','thead','span','div','pre','code'}, attributes={'a':['href','title']}, protocols={'https','http','mailto'}, strip=True)
 
 def plain_text(html):
     class TextParser(HTMLParser):
@@ -66,9 +104,10 @@ def store(account, raw, key, folder_id=None):
         msg.received = date.astimezone(timezone.utc).replace(tzinfo=None) if date.tzinfo else date
     except (ValueError, TypeError, KeyError):
         pass
-    from .contacts import address_is_trusted
-    msg.trusted = address_is_trusted(msg.sender)
     db.session.add(msg)
+    db.session.flush()
+    from .contacts import link_message_contact
+    link_message_contact(msg)
     db.session.flush()
     return True
 
@@ -149,12 +188,10 @@ def send(account, recipients, subject, html, files, source=None, mode=''):
 
 
 def display_html(message, trusted=False):
-    if not trusted: return sanitize(message.body_html)
-    original = BytesParser(policy=policy.default).parsebytes(message.raw)
-    parts = [p.get_content() for p in original.walk() if p.get_content_type() == 'text/html' and not p.get_filename()]
-    html = '\n'.join(parts) or message.body_html
+    html = original_html(message)
+    if not trusted: return sanitize(html)
     # Images are released only for a personally trusted sender. Active content
     # remains removed and the iframe retains a restrictive sandbox and CSP.
-    return bleach.clean(html, tags={'p','br','b','strong','i','em','u','ul','ol','li','blockquote','h1','h2','h3','a','table','tr','td','th','tbody','thead','span','div','pre','code','img','hr','link'},
+    return bleach.clean(strip_hidden_blocks(html), tags={'p','br','b','strong','i','em','u','ul','ol','li','blockquote','h1','h2','h3','a','table','tr','td','th','tbody','thead','span','div','pre','code','img','hr','link'},
         attributes={'a':['href','title'], 'img':['src','alt','width','height'], 'link':['href','rel'], 'td':['colspan','rowspan'], '*':['align','style']},
         protocols={'https','http','mailto'}, css_sanitizer=CSSSanitizer(), strip=True)

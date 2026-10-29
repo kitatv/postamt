@@ -4,7 +4,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import check_password_hash
 from . import db
-from .models import User, Folder, Grant, Account, Message, Attachment, UserSettings, FolderAccount, Contact, AddressBook, TrustedSender
+from .models import User, Folder, Grant, Account, Message, Attachment, UserSettings, FolderAccount, Contact, AddressBook, TrustedSender, MessageContact
 from .permissions import allowed, folder_access, message_access, visible_folders
 from .mail import cipher, sync_account, send, sanitize, plain_text, display_html
 from .contacts import sender_state, sender_email, shared_contacts, reconcile_trust
@@ -406,6 +406,8 @@ def edit_contact(cid):
 @login_required
 def delete_contact(cid):
     contact = db.get_or_404(Contact, cid)
+    ids = db.select(Contact.id).where(Contact.email == contact.email)
+    db.session.execute(db.delete(MessageContact).where(MessageContact.contact_id.in_(ids)))
     db.session.execute(db.delete(Contact).where(Contact.email == contact.email))
     reconcile_trust()
     db.session.commit()

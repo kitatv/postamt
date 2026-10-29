@@ -168,3 +168,14 @@ Die Nachrichtenliste zeigt Spalten für Kontaktname (ersatzweise Absenderadresse
 Neben jedem sichtbaren Ordner steht die direkte Anzahl ungelesener Nachrichten dieses Ordners (ohne Unterordner). Der virtuelle Ordner **Ungelesen** enthält alle ungelesenen Nachrichten aus den für den Benutzer lesbaren Ordnern, unabhängig von Konto oder Ablage. Er speichert keine Kopien. Suche, Markiert-Filter und Nachladen funktionieren auch dort. Beim Öffnen wird eine Nachricht gelesen und verschwindet aus der Ungelesen-Liste, bleibt aber in der Vorschau geöffnet. **Als ungelesen markieren** nimmt sie wieder in die Liste auf. Fremde private Ordner und deren Nachrichten werden weder angezeigt noch mitgezählt.
 
 Für bestehende Installationen wie gewohnt Datenbank und `.env` sichern, Server stoppen und `upgrade-db` ausführen. Das Upgrade ergänzt die gemeinsame `trusted`-Spalte und übernimmt die bisherigen Kontakte und expliziten Absenderfreigaben als gemeinsame Grundlage.
+
+
+## Kontaktverknüpfungen und Maildarstellung
+
+Die Zuordnung einer Absenderadresse zu einem Kontakt wird zusätzlich in `MessageContact` gespeichert. Beim Anlegen, Bearbeiten und Importieren von Kontakten sowie beim CardDAV-Abruf werden vorhandene Nachrichten aller Konten anhand der normalisierten Absenderadresse verknüpft und als vertraut markiert. Neue Nachrichten erhalten Kontaktverknüpfung und Vertrauensstatus direkt beim Import. Die Erkennung berücksichtigt Anzeigenamen und Groß-/Kleinschreibung der Adresse; andere Absenderadressen werden nicht mitverknüpft. Beim Ändern oder Löschen eines Kontakts werden Verknüpfungen neu abgeglichen; eine separat vergebene Absenderfreigabe bleibt wirksam. Ordnerrechte werden durch die Verknüpfung nicht erweitert.
+
+Nach diesem Update bei gestopptem Server und gesicherter Datenbank `upgrade-db` ausführen. Es legt die Verknüpfungstabelle an und ordnet auch bereits bekannte Kontakte und Nachrichten zu. Wiederholtes Ausführen erzeugt keine doppelten Verknüpfungen.
+
+Die HTML-Ansicht nutzt nach Möglichkeit die unveränderte MIME-Originalnachricht. Nicht sichtbare `head`-, `style`- und `script`-Blöcke werden einschließlich ihres Inhalts vor der Bereinigung entfernt. Dadurch erscheinen CSS-Regeln nicht mehr als führender Text, auch bei Nachrichten, deren gespeicherte HTML-Kopie bereits durch die frühere Bereinigung verändert wurde. Bereinigte Inline-Formatierung bleibt bei vertrauten Nachrichten erhalten.
+
+Der gemeinsame Editor für neue Nachrichten, Antworten und Weiterleitungen besitzt eine obere Menüleiste mit **Nachricht senden** rechts. Der Button ist mit dem Nachrichtenformular verbunden; Pflichtfeldprüfung, Rich-Text-Übernahme und Anhänge bleiben Teil desselben Formulars.

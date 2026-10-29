@@ -109,3 +109,9 @@ class MessageTrust(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True)
     message_id = db.Column(db.Integer, db.ForeignKey('message.id'), primary_key=True)
     trusted = db.Column(db.Boolean, nullable=False, default=False)
+
+
+class MessageContact(db.Model):
+    message_id = db.Column(db.Integer, db.ForeignKey('message.id', ondelete='CASCADE'), primary_key=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey('contact.id', ondelete='CASCADE'), nullable=False, index=True)
+    contact = db.relationship('Contact')
