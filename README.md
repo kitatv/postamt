@@ -119,7 +119,7 @@ Ordner werden als Baum unter ihrem Konto dargestellt. Neue Hauptordner können e
 
 Über der Liste steht die Anzahl angezeigter Nachrichten und die Gesamtzahl der aktuellen Auswahl. **Weiter** hängt den nächsten eingestellten Block an; Suche und Markiert-Filter bleiben erhalten. Ohne JavaScript lädt der Link die entsprechend längere Liste neu. Jede Nachricht besitzt zusätzlich zur internen ID eine eindeutige UUID/GUID, die beim Verschieben erhalten bleibt.
 
-Beim Öffnen wird die Nachricht als gelesen gespeichert. **Nachrichtenmenü → Als ungelesen markieren** setzt den Status zurück und schließt die Nachricht, damit sie nicht sofort wieder als gelesen gilt. HTML-Mails öffnen zunächst als Text (bei reinen HTML-Mails wird Text abgeleitet). **Als HTML anzeigen** aktiviert die bereinigte, isolierte HTML-Ansicht; externe Bilder, Skripte und andere externe Ressourcen werden nicht geladen.
+Beim Öffnen wird die Nachricht als gelesen gespeichert. **Nachrichtenmenü → Als ungelesen markieren** setzt den Status zurück und schließt die Nachricht, damit sie nicht sofort wieder als gelesen gilt. Unbekannte Absender öffnen zunächst als Text (bei reinen HTML-Mails wird Text abgeleitet). **Als HTML anzeigen** aktiviert für diese Nachrichten eine bereinigte, isolierte HTML-Ansicht ohne externe Ressourcen. Für gemeinsam vertraute Absender gilt die unten beschriebene HTML-Freigabe.
 
 ## Bestehende Installation aktualisieren
 
@@ -136,3 +136,35 @@ Windows:
 ```
 
 Der Befehl ergänzt die GUID-Spalte und einen eindeutigen Index, weist bestehenden Nachrichten jeweils eine neue UUID zu und legt die Tabellen für Benutzereinstellungen und Konto-Ordnerzuordnungen an. Bestehende Posteingangs- und Gesendet-Ordner samt Unterordnern werden dem Konto zugeordnet. Der Befehl kann erneut ausgeführt werden; vorhandene GUIDs und Einstellungen bleiben erhalten. Neue Installationen verwenden weiterhin `init-db`; das Windows-Setup verwendet `upgrade-db` für Neuinstallation und Aktualisierung. Erst nach erfolgreichem Upgrade den Server wieder starten. MySQL-DDL kann nicht vollständig zurückgerollt werden; das Upgrade bei einem Fehler nach Diagnose erneut ausführen oder die Sicherung wiederherstellen.
+
+
+## Vertrauen, Kontakte und Antworten
+
+Alle Nachrichten besitzen einen **gemeinsamen Vertrauensstatus** (`Message.trusted`). **Absender vertrauen** gibt die normalisierte From-Adresse für alle Benutzer frei; eine Namensgleichheit allein genügt nicht. Auch ein Kontakt im gemeinsamen Adressbuch macht die zugehörige E-Mail-Adresse für alle vertraut. Der Status wird beim Anzeigen sowie bei Kontakt- und Vertrauensänderungen aktualisiert und bei neuen Importen übernommen. Vertrauen ist eine gemeinsame Freigabe der Adresse, keine kryptografische Prüfung des Absenders. Ordnerberechtigungen bleiben davon unabhängig.
+
+**Kontakt anlegen** öffnet einen Dialog mit vorbelegter Absenderadresse und Pflichtfeld Name. Die Adresse wird serverseitig aus der Nachricht übernommen. Nach dem Speichern erscheint `Kontaktname (adresse@example.de)` über der Nachricht. Das lokale Adressbuch ist über **Adressbuch** erreichbar und unterstützt vCard-Import/-Export.
+
+Vertraute Nachrichten öffnen automatisch in HTML. Externe Bilder und verlinkte Stylesheets sowie bereinigte Inline-Formatierung dürfen dann geladen werden; dabei kann der externe Anbieter den Abruf sehen. Die Darstellung bleibt in einem Sandbox-Iframe. JavaScript, Formulare und eingebettete aktive Inhalte sind weiterhin gesperrt. Über **Als Text anzeigen** lässt sich auch eine vertraute Nachricht als Text lesen. Unbekannte Nachrichten laden keine externen Inhalte.
+
+Die Nachrichtenaktionen stehen als Buttons über der Vorschau. **Antworten** und **Weiterleiten** sind nur bei vertrauten Nachrichten, Schreibrecht auf den Quellordner und einem eigenen Versandkonto verfügbar; dies wird auch bei direkten HTTP-Anfragen geprüft. Der Editor belegt Empfänger (Antwort), Betreff und zitierten Originaltext vor. Bei Weiterleitungen werden die Originalanhänge zusätzlich mitgesendet. Antworten setzen `In-Reply-To` und `References`, wenn das Original eine Message-ID besitzt. Nach erfolgreichem SMTP-Versand und lokaler Ablage wird die ursprüngliche Nachricht als beantwortet bzw. weitergeleitet markiert. Die Liste zeigt **→** für weitergeleitet und **←** für beantwortet, untereinander und bei Bedarf gemeinsam. Diese Versandkennzeichen gelten gemeinsam für die Nachricht.
+
+### CardDAV
+
+Unter **Adressbuch** kann eine externe CardDAV-Adressbuchsammlung mit vollständiger HTTPS-URL, Benutzername und Passwort/App-Passwort verbunden werden. Zugangsdaten werden wie Mailpasswörter verschlüsselt. **Kontakte abrufen** importiert Kontakte per CardDAV `addressbook-query` (REPORT); die enthaltenen E-Mail-Adressen gelten danach als vertraut. Über den Nachrichtendialog kann ein neuer Kontakt wahlweise lokal oder direkt im verbundenen CardDAV-Adressbuch (vCard-PUT mit `If-None-Match`) angelegt werden.
+
+Die Sammlung muss bereits existieren; automatische Server-/Sammlungserkennung, OAuth, ein eigener CardDAV-Server sowie die Synchronisation von Änderungen und Löschungen in beide Richtungen sind nicht enthalten. Imports aktualisieren Namen desselben Adressbuchs, überschreiben aber keine Kontakte anderer Quellen. Entfernte Kontakte werden beim Import nicht automatisch lokal gelöscht. Abruf erfolgt manuell; vCard-Import/-Export ist zusätzlich verfügbar. Der CardDAV-Host muss aus der Zielumgebung per HTTPS erreichbar sein. TLS-Prüfung bleibt aktiv, Weiterleitungen werden zum Schutz der Zugangsdaten nicht verfolgt.
+
+Nach dem Aktualisieren der Abhängigkeiten das vorhandene `upgrade-db` bei gestopptem Server ausführen. Es ergänzt `replied`/`forwarded` für bestehende Nachrichten und die Tabellen für Kontakte, CardDAV-Bücher und gemeinsame Vertrauensfreigaben. Vorher Datenbank und `.env` sichern. Echte CardDAV-Server und Mailanbieter benötigen deine Zugangsdaten; die automatisierten Tests verwenden Protokoll-Testdoubles.
+
+
+## Gemeinsames Adressbuch und ungelesene Nachrichten
+
+Alle angemeldeten Benutzer dürfen das gemeinsame Adressbuch einsehen, Kontakte anlegen, Namen und E-Mail-Adressen bearbeiten, Kontakte löschen sowie vCards importieren und exportieren. Auch verbundene CardDAV-Adressbücher können gemeinsam für Abruf und Kontaktanlage genutzt werden; gespeicherte Passwörter werden nicht ausgegeben. Änderungen an importierten Kontakten erfolgen lokal, nicht per CardDAV-Update; ein späterer Abruf kann den Namen erneut aus der Quelle übernehmen.
+
+Bestehende personenbezogene Kontakte und Absenderfreigaben werden nach dem Upgrade gemeinsam ausgewertet. `owner_id` dokumentiert weiterhin den Ersteller, beschränkt aber nicht mehr den Adressbuchzugriff. Doppelte Adressen aus älteren Installationen bleiben erhalten und werden als ein gemeinsamer Eintrag angezeigt (älteste Kontakt-ID). Bearbeiten und Löschen wirken auf alle bisherigen Kontakte derselben Adresse. Das Löschen eines Kontakts entfernt dessen abgeleitetes Vertrauen; eine zusätzlich explizit erteilte Absenderfreigabe bleibt bestehen. Die alte Tabelle `MessageTrust` wird aus Kompatibilitätsgründen erhalten, aber nicht mehr als Quelle des Vertrauensstatus verwendet.
+
+Die Nachrichtenliste zeigt Spalten für Kontaktname (ersatzweise Absenderadresse) und Betreff, das Sendedatum einschließlich Uhrzeit in UTC sowie Statussymbole für gelesen/ungelesen, Vertrauen, Markierung, Anhänge, beantwortet und weitergeleitet. Die beiden Versandpfeile bleiben untereinander angeordnet.
+
+Neben jedem sichtbaren Ordner steht die direkte Anzahl ungelesener Nachrichten dieses Ordners (ohne Unterordner). Der virtuelle Ordner **Ungelesen** enthält alle ungelesenen Nachrichten aus den für den Benutzer lesbaren Ordnern, unabhängig von Konto oder Ablage. Er speichert keine Kopien. Suche, Markiert-Filter und Nachladen funktionieren auch dort. Beim Öffnen wird eine Nachricht gelesen und verschwindet aus der Ungelesen-Liste, bleibt aber in der Vorschau geöffnet. **Als ungelesen markieren** nimmt sie wieder in die Liste auf. Fremde private Ordner und deren Nachrichten werden weder angezeigt noch mitgezählt.
+
+Für bestehende Installationen wie gewohnt Datenbank und `.env` sichern, Server stoppen und `upgrade-db` ausführen. Das Upgrade ergänzt die gemeinsame `trusted`-Spalte und übernimmt die bisherigen Kontakte und expliziten Absenderfreigaben als gemeinsame Grundlage.

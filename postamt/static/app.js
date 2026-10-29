@@ -65,3 +65,10 @@ if (workspace && Number(workspace.dataset.refreshSeconds) > 0) {
   };
   window.setTimeout(refresh, delay);
 }
+
+document.querySelectorAll('[data-open-dialog]').forEach(button => button.addEventListener('click', () => {
+  document.getElementById(button.dataset.openDialog).showModal();
+}));
+document.querySelectorAll('[data-close-dialog]').forEach(button => button.addEventListener('click', () => {
+  button.closest('dialog').close();
+}));

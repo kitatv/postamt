@@ -54,6 +54,9 @@ class FolderAccount(db.Model):
     account_id = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=False)
 
 class Message(db.Model):
+    trusted = db.Column(db.Boolean, nullable=False, default=False)
+    replied = db.Column(db.Boolean, nullable=False, default=False)
+    forwarded = db.Column(db.Boolean, nullable=False, default=False)
     guid = db.Column(db.String(36), nullable=False, unique=True, default=lambda: str(uuid4()))
     id = db.Column(db.Integer, primary_key=True)
     folder_id = db.Column(db.Integer, db.ForeignKey('folder.id'), nullable=False)
@@ -77,3 +80,32 @@ class Attachment(db.Model):
     filename = db.Column(db.String(255), nullable=False)
     content_type = db.Column(db.String(255), nullable=False)
     data = db.Column(db.LargeBinary(length=16777215), nullable=False)
+
+class AddressBook(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    name = db.Column(db.String(120), nullable=False)
+    url = db.Column(db.String(1000), nullable=False)
+    username = db.Column(db.String(254), nullable=False)
+    password = db.Column(Text, nullable=False)
+
+class Contact(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    name = db.Column(db.String(150), nullable=False)
+    email = db.Column(db.String(254), nullable=False)
+    book_id = db.Column(db.Integer, db.ForeignKey('address_book.id'))
+    uid = db.Column(db.String(255), nullable=False, default=lambda: str(uuid4()))
+    __table_args__ = (db.UniqueConstraint('owner_id', 'email'),)
+
+class TrustedSender(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    email = db.Column(db.String(254), nullable=False)
+    __table_args__ = (db.UniqueConstraint('owner_id', 'email'),)
+
+class MessageTrust(db.Model):
+    """Legacy per-user cache; global trust is now stored on Message.trusted."""
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True)
+    message_id = db.Column(db.Integer, db.ForeignKey('message.id'), primary_key=True)
+    trusted = db.Column(db.Boolean, nullable=False, default=False)

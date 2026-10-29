@@ -9,3 +9,6 @@ gunicorn==23.0.0; sys_platform != "win32"
 waitress==3.0.2
 pytest==9.0.2
 python-dotenv==1.2.1
+vobject==0.9.9
+defusedxml==0.7.1
+tinycss2==1.4.0

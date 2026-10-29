@@ -11,6 +11,7 @@ from email.utils import parsedate_to_datetime, getaddresses
 from flask import current_app
 from cryptography.fernet import Fernet
 import bleach
+from bleach.css_sanitizer import CSSSanitizer
 from . import db
 from .models import Message, Attachment
 
@@ -65,6 +66,8 @@ def store(account, raw, key, folder_id=None):
         msg.received = date.astimezone(timezone.utc).replace(tzinfo=None) if date.tzinfo else date
     except (ValueError, TypeError, KeyError):
         pass
+    from .contacts import address_is_trusted
+    msg.trusted = address_is_trusted(msg.sender)
     db.session.add(msg)
     db.session.flush()
     return True
@@ -112,7 +115,7 @@ def sync_account(account):
     db.session.commit()
     return count
 
-def send(account, recipients, subject, html, files):
+def send(account, recipients, subject, html, files, source=None, mode=''):
     addresses = [addr for _, addr in getaddresses([recipients])]
     if not addresses or any('@' not in addr or '\n' in addr or '\r' in addr for addr in addresses):
         raise ValueError('Ungültige Empfängeradresse')
@@ -120,6 +123,11 @@ def send(account, recipients, subject, html, files):
     msg['From'], msg['To'], msg['Subject'] = account.email, ', '.join(addresses), subject
     from email.utils import formatdate, make_msgid
     msg['Date'], msg['Message-ID'] = formatdate(localtime=False), make_msgid()
+    if source and mode == 'reply':
+        original = BytesParser(policy=policy.default).parsebytes(source.raw)
+        if original.get('Message-ID'):
+            msg['In-Reply-To'] = str(original['Message-ID'])
+            msg['References'] = str(original['Message-ID'])
     html = sanitize(html)
     msg.set_content(bleach.clean(html, tags=[], strip=True))
     msg.add_alternative(html, subtype='html')
@@ -134,4 +142,19 @@ def send(account, recipients, subject, html, files):
         smtp.login(account.username, password)
         smtp.send_message(msg)
     store(account, raw, None, account.sent_id)
+    if source:
+        if mode == 'reply': source.replied = True
+        elif mode == 'forward': source.forwarded = True
     db.session.commit()
+
+
+def display_html(message, trusted=False):
+    if not trusted: return sanitize(message.body_html)
+    original = BytesParser(policy=policy.default).parsebytes(message.raw)
+    parts = [p.get_content() for p in original.walk() if p.get_content_type() == 'text/html' and not p.get_filename()]
+    html = '\n'.join(parts) or message.body_html
+    # Images are released only for a personally trusted sender. Active content
+    # remains removed and the iframe retains a restrictive sandbox and CSP.
+    return bleach.clean(html, tags={'p','br','b','strong','i','em','u','ul','ol','li','blockquote','h1','h2','h3','a','table','tr','td','th','tbody','thead','span','div','pre','code','img','hr','link'},
+        attributes={'a':['href','title'], 'img':['src','alt','width','height'], 'link':['href','rel'], 'td':['colspan','rowspan'], '*':['align','style']},
+        protocols={'https','http','mailto'}, css_sanitizer=CSSSanitizer(), strip=True)
