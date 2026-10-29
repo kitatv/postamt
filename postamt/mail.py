@@ -3,6 +3,7 @@ import poplib
 import smtplib
 import ssl
 import hashlib
+from html.parser import HTMLParser
 from email import policy
 from email.parser import BytesParser
 from email.message import EmailMessage
@@ -18,6 +19,24 @@ def cipher():
 
 def sanitize(html):
     return bleach.clean(html, tags={'p','br','b','strong','i','em','u','ul','ol','li','blockquote','h1','h2','h3','a','table','tr','td','th','tbody','thead','span','div','pre','code'}, attributes={'a':['href','title']}, protocols={'https','http','mailto'}, strip=True)
+
+def plain_text(html):
+    class TextParser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.parts = []
+            self.hidden = 0
+        def handle_starttag(self, tag, attrs):
+            if tag in ('script', 'style'): self.hidden += 1
+            if tag in ('p', 'div', 'br', 'li', 'tr', 'blockquote'): self.parts.append('\n')
+        def handle_endtag(self, tag):
+            if tag in ('script', 'style'): self.hidden = max(0, self.hidden - 1)
+            if tag in ('p', 'div', 'li', 'tr'): self.parts.append('\n')
+        def handle_data(self, data):
+            if not self.hidden: self.parts.append(data)
+    parser = TextParser()
+    parser.feed(html)
+    return ''.join(parser.parts).strip()
 
 def store(account, raw, key, folder_id=None):
     if key and db.session.scalar(db.select(Message.id).filter_by(account_id=account.id, remote_key=key)):
@@ -38,7 +57,7 @@ def store(account, raw, key, folder_id=None):
             html.append(part.get_content())
     msg = Message(account_id=account.id, folder_id=folder_id or account.inbox_id, remote_key=key,
         subject=str(parsed.get('Subject', '(Ohne Betreff)'))[:998], sender=str(parsed.get('From','')),
-        recipients=str(parsed.get('To','')), body_text='\n'.join(text), body_html=sanitize('\n'.join(html)), raw=raw,
+        recipients=str(parsed.get('To','')), body_text='\n'.join(text) or plain_text('\n'.join(html)), body_html=sanitize('\n'.join(html)), raw=raw,
         attachments=attachments)
     try:
         from datetime import timezone

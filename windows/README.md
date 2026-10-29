@@ -60,3 +60,7 @@ py -3 -m venv .venv
 Mailabruf fuer alle Konten: `.venv\Scripts\python.exe -m flask --app postamt sync-mail`. Diesen Befehl bei Bedarf ueber die Windows-Aufgabenplanung mit dem Projektordner als Arbeitsverzeichnis ausfuehren. Tests: `.venv\Scripts\python.exe -m pytest -q`.
 
 Funktionsumfang und Grenzen der Mailanbindung stehen in der [Projekt-README](../README.md). Die Anwendung und der Waitress-Start werden in der Linux-Entwicklungsumgebung geprueft; ein nativer Windows-Test ist dort nicht moeglich.
+
+## Aktualisieren
+
+Vor einem Update Server und Abrufjobs stoppen und Datenbank sowie `.env` sichern. Dann `setup.ps1` erneut ausfuehren. Es aktualisiert die Abhaengigkeiten und ruft `upgrade-db` auf; bestehende Schluessel werden nicht ersetzt. Danach `start.ps1` starten. Details zu GUIDs und neuen Einstellungen stehen in der Projekt-README.

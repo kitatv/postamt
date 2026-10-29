@@ -1,11 +1,11 @@
 from io import BytesIO
-from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, send_file, make_response
+from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, send_file, make_response, jsonify
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import check_password_hash
 from . import db
-from .models import User, Folder, Grant, Account, Message, Attachment
+from .models import User, Folder, Grant, Account, Message, Attachment, UserSettings, FolderAccount
 from .permissions import allowed, folder_access, message_access, visible_folders
-from .mail import cipher, sync_account, send, sanitize
+from .mail import cipher, sync_account, send, sanitize, plain_text
 
 web = Blueprint('web', __name__)
 
@@ -30,18 +30,36 @@ def logout():
 def index():
     folders = visible_folders()
     fid = request.args.get('folder', type=int)
+    mid = request.args.get('message', type=int)
+    active = message_access(mid) if mid else None
     selected = folder_access(fid) if fid else (folders[0] if folders else None)
+    if active:
+        selected = folder_access(active.folder_id)
     query = db.select(Message).where(Message.folder_id == selected.id) if selected else db.select(Message).where(db.false())
     q = request.args.get('q','')[:200]
     if q:
         query = query.where(db.or_(Message.subject.contains(q, autoescape=True), Message.sender.contains(q, autoescape=True), Message.body_text.contains(q, autoescape=True)))
     if request.args.get('starred'):
         query = query.where(Message.starred.is_(True))
-    page = db.paginate(query.order_by(Message.received.desc(), Message.id.desc()), per_page=40)
-    mid = request.args.get('message', type=int)
-    active = message_access(mid) if mid else None
-    return render_template('inbox.html', folders=folders, selected=selected, messages=page.items, page=page,
-        active=active, grants=db.session.execute(db.select(Grant, User).join(User, Grant.user_id == User.id).where(Grant.folder_id == selected.id)).all() if selected and selected.owner_id == current_user.id else [], accounts=db.session.scalars(db.select(Account).filter_by(owner_id=current_user.id)).all(), q=q, allowed=allowed)
+    settings = db.session.get(UserSettings, current_user.id)
+    batch = settings.page_size if settings else 40
+    loaded = max(batch, request.args.get('loaded', batch, type=int))
+    total = db.session.scalar(db.select(db.func.count()).select_from(query.subquery()))
+    messages = db.session.scalars(query.order_by(Message.received.desc(), Message.id.desc()).limit(loaded)).all()
+    if active:
+        selected = folder_access(active.folder_id)
+        if not active.read:
+            active.read = True
+            db.session.commit()
+    accounts = db.session.scalars(db.select(Account).filter_by(owner_id=current_user.id)).all()
+    from .navigation import account_trees
+    trees = account_trees(folders, accounts)
+    return render_template('inbox.html', folders=folders, selected=selected, messages=messages,
+        total=total, loaded=len(messages), next_loaded=loaded + batch if loaded < total else None,
+        trees=trees, refresh_seconds=settings.refresh_seconds if settings else 0,
+        plain_body=(active.body_text or plain_text(active.body_html)) if active else '',
+        html_mode=request.args.get('view') == 'html', starred=request.args.get('starred', ''),
+        active=active, grants=db.session.execute(db.select(Grant, User).join(User, Grant.user_id == User.id).where(Grant.folder_id == selected.id)).all() if selected and selected.owner_id == current_user.id else [], accounts=accounts, q=q, allowed=allowed)
 
 @web.get('/messages/<int:mid>/html')
 @login_required
@@ -61,16 +79,17 @@ def attachment(aid):
 @web.post('/messages/<int:mid>/action')
 @login_required
 def message_action(mid):
-    msg = message_access(mid, True)
     action = request.form.get('action')
+    msg = message_access(mid, action not in ('read', 'unread'))
     if action == 'star': msg.starred = not msg.starred
     elif action == 'read': msg.read = not msg.read
+    elif action == 'unread': msg.read = False
     elif action == 'move':
         target = folder_access(request.form.get('target', type=int), True)
         msg.folder_id = target.id
     else: abort(400)
     db.session.commit()
-    return redirect(url_for('web.index', folder=msg.folder_id, message=msg.id))
+    return redirect(url_for('web.index', folder=msg.folder_id, message=None if action in ('read', 'unread') and not msg.read else msg.id))
 
 @web.post('/folders')
 @login_required
@@ -81,8 +100,17 @@ def create_folder():
     if pid:
         parent = folder_access(pid)
         if parent.owner_id != current_user.id: abort(403)
+    account_id = request.form.get('account', type=int)
+    if pid:
+        mapping = db.session.get(FolderAccount, pid)
+        account_id = mapping.account_id if mapping else None
+    if account_id:
+        account = db.get_or_404(Account, account_id)
+        if account.owner_id != current_user.id: abort(403)
     folder = Folder(name=name, owner_id=current_user.id, parent_id=pid)
     db.session.add(folder)
+    db.session.flush()
+    if account_id: db.session.add(FolderAccount(folder_id=folder.id, account_id=account_id))
     db.session.commit()
     flash('Ordner angelegt. Berechtigungen gelten jeweils für den einzelnen Ordner.')
     return redirect(url_for('web.index', folder=folder.id))
@@ -128,8 +156,11 @@ def accounts():
         inbox = Folder(name=data['email'][:130] + ' · Eingang', owner_id=current_user.id)
         sent = Folder(name=data['email'][:130] + ' · Gesendet', owner_id=current_user.id)
         db.session.add_all([inbox,sent]); db.session.flush()
-        db.session.add(Account(owner_id=current_user.id, protocol=protocol, port=port, smtp_port=smtp_port,
-            password=cipher().encrypt(password.encode()).decode(), inbox_id=inbox.id, sent_id=sent.id, **data))
+        account = Account(owner_id=current_user.id, protocol=protocol, port=port, smtp_port=smtp_port,
+            password=cipher().encrypt(password.encode()).decode(), inbox_id=inbox.id, sent_id=sent.id, **data)
+        db.session.add(account)
+        db.session.flush()
+        db.session.add_all([FolderAccount(folder_id=f.id, account_id=account.id) for f in (inbox, sent)])
         db.session.commit()
         flash('Konto gespeichert. Mit „Abrufen“ werden Nachrichten importiert.')
         return redirect(url_for('web.accounts'))
@@ -162,3 +193,37 @@ def compose():
             db.session.rollback()
             flash('Versand oder lokale Ablage fehlgeschlagen. Vor erneutem Senden den Versandstatus beim Mailanbieter prüfen.', 'error')
     return render_template('compose.html', accounts=accounts, draft_html=sanitize(request.form.get('body','')))
+
+
+@web.route('/settings', methods=['GET', 'POST'])
+@login_required
+def settings():
+    preferences = db.session.get(UserSettings, current_user.id)
+    if not preferences:
+        preferences = UserSettings(user_id=current_user.id, refresh_seconds=0, page_size=40)
+    if request.method == 'POST':
+        try:
+            interval = int(request.form.get('refresh_seconds', ''))
+            size = int(request.form.get('page_size', ''))
+            if interval != 0 and not 30 <= interval <= 86400: raise ValueError()
+            if not 1 <= size <= 200: raise ValueError()
+        except ValueError:
+            flash('Abrufintervall: 0 oder 30–86400 Sekunden; Listenlänge: 1–200.', 'error')
+            return render_template('settings.html', preferences=preferences), 400
+        preferences.refresh_seconds, preferences.page_size = interval, size
+        db.session.add(preferences)
+        db.session.commit()
+        flash('Einstellungen gespeichert.')
+        return redirect(url_for('web.settings'))
+    return render_template('settings.html', preferences=preferences)
+
+@web.post('/refresh')
+@login_required
+def refresh():
+    count, failures = 0, 0
+    for account in db.session.scalars(db.select(Account).filter_by(owner_id=current_user.id)).all():
+        try: count += sync_account(account)
+        except Exception:
+            db.session.rollback()
+            failures += 1
+    return jsonify(imported=count, failures=failures), 200 if not failures else 502

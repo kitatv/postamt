@@ -19,7 +19,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Installation der Abhaengigkeiten fehlgeschlagen.' }
     & $Python windows\configure.py
     if ($LASTEXITCODE -ne 0) { throw 'Konfiguration fehlgeschlagen.' }
-    & $Python -m flask --app postamt init-db
+    & $Python -m flask --app postamt upgrade-db
     if ($LASTEXITCODE -ne 0) { throw 'Datenbankinitialisierung fehlgeschlagen. .env pruefen.' }
     Write-Host 'Installation abgeschlossen. Benutzer mit windows\create-user.ps1 anlegen, dann windows\start.ps1 starten.'
 } finally {

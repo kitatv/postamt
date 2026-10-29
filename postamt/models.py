@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from uuid import uuid4
 from flask_login import UserMixin
 from sqlalchemy.dialects.mysql import LONGTEXT
 
@@ -43,7 +44,17 @@ class Account(db.Model):
     inbox_id = db.Column(db.Integer, db.ForeignKey('folder.id'), nullable=False)
     sent_id = db.Column(db.Integer, db.ForeignKey('folder.id'), nullable=False)
 
+class UserSettings(db.Model):
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True)
+    refresh_seconds = db.Column(db.Integer, nullable=False, default=0)
+    page_size = db.Column(db.Integer, nullable=False, default=40)
+
+class FolderAccount(db.Model):
+    folder_id = db.Column(db.Integer, db.ForeignKey('folder.id'), primary_key=True)
+    account_id = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=False)
+
 class Message(db.Model):
+    guid = db.Column(db.String(36), nullable=False, unique=True, default=lambda: str(uuid4()))
     id = db.Column(db.Integer, primary_key=True)
     folder_id = db.Column(db.Integer, db.ForeignKey('folder.id'), nullable=False)
     account_id = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=False)

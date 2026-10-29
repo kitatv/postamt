@@ -10,7 +10,7 @@ Mehrbenutzerfähiger E-Mail-Client mit Flask, wahlweise MySQL 8.4 oder SQLite un
 - Rich-Text-Editor mit Formatierung und Anhängen, Versand über SMTP mit implizitem TLS.
 - Nachrichten, MIME-Originale, Anhänge, Konten, Benutzer, Ordner und Berechtigungen in der gewählten Datenbank (MySQL oder SQLite); Anhänge werden nicht als separate Dateien abgelegt.
 - Lokale verschachtelte Ordner; explizite Leserechte oder Lese-/Schreibrechte pro Benutzer und Ordner, inklusive Entzug.
-- Suche im gewählten Ordner, Markierungen, Gelesen-Status, Verschieben und Pagination.
+- Suche im gewählten Ordner, Markierungen, Gelesen-Status, Verschieben und schrittweises Nachladen.
 - CSRF-Schutz, sichere Session-Cookies als Standard, serverseitige Berechtigungsprüfung auch für HTML-Ansichten und Downloads.
 
 ## Windows
@@ -72,7 +72,7 @@ Die Auswahl erfolgt ausschließlich über `DATABASE_URL`; MySQL bleibt in `.env.
 
 ## Ordnerrechte
 
-Ein Ordner ist zunächst nur für seinen Eigentümer zugänglich. Unter **Ordnerzugriff verwalten** einen vorhandenen Benutzer über seine E-Mail-Adresse freigeben. Lesen erlaubt Nachrichtenansicht und Downloads; Schreiben erlaubt zusätzlich Markierungen, Gelesen-Status und Verschieben. Zum Verschieben ist Schreibzugriff auf Quell- und Zielordner erforderlich. Nur der Eigentümer verwaltet Freigaben. Rechte werden bewusst nicht an Unterordner vererbt; jeder Unterordner wird separat freigegeben. Kontozugangsdaten und Synchronisierung bleiben ausschließlich beim Kontoeigentümer.
+Ein Ordner ist zunächst nur für seinen Eigentümer zugänglich. Unter **Ordnerzugriff verwalten** einen vorhandenen Benutzer über seine E-Mail-Adresse freigeben. Lesen erlaubt Nachrichtenansicht und Downloads; Schreiben erlaubt zusätzlich Markierungen und Verschieben. Beim Öffnen wird eine Nachricht automatisch als gelesen markiert; auch Benutzer mit Leserecht können sie über das Nachrichtenmenü wieder als ungelesen markieren. Der Gelesen-Status gilt gemeinsam für die Nachricht. Zum Verschieben ist Schreibzugriff auf Quell- und Zielordner erforderlich. Nur der Eigentümer verwaltet Freigaben. Rechte werden bewusst nicht an Unterordner vererbt; jeder Unterordner wird separat freigegeben. Kontozugangsdaten und Synchronisierung bleiben ausschließlich beim Kontoeigentümer.
 
 ## Synchronisierung und Versand
 
@@ -106,6 +106,33 @@ Die Tests prüfen Mehrbenutzer-Isolation, Freigaben und Entzug, Anhänge, Versch
 
 Für den produktiven Betrieb HTTPS über einen Reverse-Proxy verwenden und `COOKIE_SECURE=1` setzen. Anwendung z. B. mit `.venv/bin/gunicorn --workers 2 --threads 4 --timeout 120 'postamt:create_app()'` starten; die Konfiguration dafür als Prozessumgebung bereitstellen (Gunicorn lädt `.env` nicht automatisch). Anmeldung am Reverse-Proxy begrenzen. Keine öffentliche Registrierung vorhanden.
 
-Die gewählte Datenbank und den stabilen Fernet-Schlüssel getrennt und sicher sichern: Ohne den ursprünglichen Schlüssel sind gespeicherte Mailpasswörter nicht wiederherstellbar. Bei SQLite konsistente Backups mit der SQLite-Backup-API erstellen oder die Anwendung für die Dateisicherung anhalten; eine laufend beschriebene Datei nicht einfach kopieren. Bei MySQL den Datenbankport nicht öffentlich bereitstellen. Datenbank und Anwendung nur für berechtigte Betreiber zugänglich machen. `init-db` initialisiert das Schema; spätere Schemaänderungen benötigen geplante Migrationen, es ist noch kein Upgrade-Migrationssystem vorhanden.
+Die gewählte Datenbank und den stabilen Fernet-Schlüssel getrennt und sicher sichern: Ohne den ursprünglichen Schlüssel sind gespeicherte Mailpasswörter nicht wiederherstellbar. Bei SQLite konsistente Backups mit der SQLite-Backup-API erstellen oder die Anwendung für die Dateisicherung anhalten; eine laufend beschriebene Datei nicht einfach kopieren. Bei MySQL den Datenbankport nicht öffentlich bereitstellen. Datenbank und Anwendung nur für berechtigte Betreiber zugänglich machen. `init-db` initialisiert das Schema; spätere Schemaänderungen benötigen geplante Migrationen, für die neuen Einstellungen, Konto-Ordnerzuordnungen und Nachrichten-GUIDs steht der unten beschriebene additive Upgrade-Befehl bereit.
 
 Es wurden weder die Cloud-Umgebung veröffentlicht noch externe E-Mails versendet. Für echte Mailkonten müssen die jeweiligen Hosts und TLS-Ports im Netzwerk der Zielumgebung erreichbar sein.
+
+
+## Einstellungen, Kontobäume und Leseansicht
+
+Unter **Einstellungen** wählt jeder Benutzer sein Abrufintervall (0 = aus, sonst 30–86400 Sekunden) und die Anzahl E-Mails pro Ladeschritt (1–200, Standard 40). Der automatische Abruf läuft nur bei geöffneter Mailansicht im Browser und betrifft die eigenen Konten. Es ist kein Hintergrunddienst bei geschlossenem Browser. Der Abrufbutton neben jedem eigenen Konto erlaubt einen sofortigen Abruf.
+
+Ordner werden als Baum unter ihrem Konto dargestellt. Neue Hauptordner können einem Konto zugeordnet werden; Unterordner übernehmen die Kontozuordnung ihres Elternordners. Lokale Ordner ohne Konto und freigegebene Ordner ohne eigenes Konto stehen in einer separaten Gruppe. Fremde Kontozugangsdaten und Kontonamen werden durch eine Ordnerfreigabe nicht offengelegt. Die IMAP-Anbindung importiert weiterhin INBOX; der Baum zeigt die lokale Ablage, keine vollständige Synchronisation aller Serverordner.
+
+Über der Liste steht die Anzahl angezeigter Nachrichten und die Gesamtzahl der aktuellen Auswahl. **Weiter** hängt den nächsten eingestellten Block an; Suche und Markiert-Filter bleiben erhalten. Ohne JavaScript lädt der Link die entsprechend längere Liste neu. Jede Nachricht besitzt zusätzlich zur internen ID eine eindeutige UUID/GUID, die beim Verschieben erhalten bleibt.
+
+Beim Öffnen wird die Nachricht als gelesen gespeichert. **Nachrichtenmenü → Als ungelesen markieren** setzt den Status zurück und schließt die Nachricht, damit sie nicht sofort wieder als gelesen gilt. HTML-Mails öffnen zunächst als Text (bei reinen HTML-Mails wird Text abgeleitet). **Als HTML anzeigen** aktiviert die bereinigte, isolierte HTML-Ansicht; externe Bilder, Skripte und andere externe Ressourcen werden nicht geladen.
+
+## Bestehende Installation aktualisieren
+
+Server und automatische Abrufjobs stoppen und Datenbank sowie `.env` sichern. Mit derselben Datenbankkonfiguration anschließend ausführen:
+
+```sh
+.venv/bin/python -m flask --app postamt upgrade-db
+```
+
+Windows:
+
+```powershell
+.venv\Scripts\python.exe -m flask --app postamt upgrade-db
+```
+
+Der Befehl ergänzt die GUID-Spalte und einen eindeutigen Index, weist bestehenden Nachrichten jeweils eine neue UUID zu und legt die Tabellen für Benutzereinstellungen und Konto-Ordnerzuordnungen an. Bestehende Posteingangs- und Gesendet-Ordner samt Unterordnern werden dem Konto zugeordnet. Der Befehl kann erneut ausgeführt werden; vorhandene GUIDs und Einstellungen bleiben erhalten. Neue Installationen verwenden weiterhin `init-db`; das Windows-Setup verwendet `upgrade-db` für Neuinstallation und Aktualisierung. Erst nach erfolgreichem Upgrade den Server wieder starten. MySQL-DDL kann nicht vollständig zurückgerollt werden; das Upgrade bei einem Fehler nach Diagnose erneut ausführen oder die Sicherung wiederherstellen.

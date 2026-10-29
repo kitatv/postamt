@@ -42,6 +42,12 @@ def create_app(config=None):
     def init_db():
         db.create_all()
         click.echo('Datenbankschema angelegt.')
+    @app.cli.command('upgrade-db')
+    def upgrade_db():
+        from .upgrade import upgrade_database
+        upgrade_database()
+        click.echo('Datenbankschema aktualisiert.')
+
     @app.cli.command('create-user')
     @click.argument('email')
     @click.option('--name', prompt=True)
